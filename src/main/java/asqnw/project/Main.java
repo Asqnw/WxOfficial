@@ -71,6 +71,11 @@ public class Main
             System.out.println("2.1配置文件不存在，退出执行");
             System.exit(0);
         }
+        catch (StringIndexOutOfBoundsException ignored)
+        {
+            System.out.println("2.1配置文件设置异常，退出执行");
+            System.exit(0);
+        }
         System.out.println("三、获取微信服务器IP组");
         System.out.println("3.1获取公众号ACCESS_TOKEN");
         try
@@ -92,69 +97,72 @@ public class Main
         System.out.println("准备完成，启动服务器");
         new HttpServer().start(request -> {
             HashMap<String, String> response = new HashMap<>();
+            if (request.get(HttpServer.URL).get(0).equals("/"))
+            {
 //            String userIp = HttpServer.findHeader(request.get(HttpServer.HEADER), "x-forwarded-for");//这里无需担心该请求头伪造问题，在Nginx中已经处理
-            String body;
-            System.out.println(request);
-            ArrayList<String> postBody = request.get(HttpServer.BODY);
-            if ((body = (postBody == null ? "" : postBody.get(0))).isEmpty())//GET请求
-            {
-                String[] state = checkSign(request);
-                switch (state[0])
+                String body;
+                System.out.println(request);
+                ArrayList<String> postBody = request.get(HttpServer.BODY);
+                if ((body = (postBody == null ? "" : postBody.get(0))).isEmpty())//GET请求
                 {
-                    case "0", "1" -> response.put("200 OK", state[1]);
-                    case "2" -> response.put("400 Bad Request", state[1]);
-                    default -> response.put("", "");
-                }
-            }
-            else
-            {
-                String[] state = checkSign(request);
-                if (state[0].equals("0"))
-                {
-                    try
+                    String[] state = checkSign(request);
+                    switch (state[0])
                     {
-                        Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(body)));
-                        XPath xpath = XPathFactory.newInstance().newXPath();
-                        String toUserName = (String) xpath.evaluate("/xml/ToUserName/text()", document, XPathConstants.STRING);
-                        String fromUserName = (String) xpath.evaluate("/xml/FromUserName/text()", document, XPathConstants.STRING);
-                        String[] config = configLoader.getConfigs(xpath, document);
-                        String type = config[0];
-                        switch (type)
-                        {
-                            case "text" ->
-                                response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[1] + "]]></Content></xml>");
-                            case "url" -> {
-                                try
-                                {
-                                    response.put("200 OK", new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], body));
-                                }
-                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
-                                {
-                                    response.put("200 OK", "success");
-                                }
-                            }
-                            case "proxyText" -> {
-                                try
-                                {
-                                    HashMap<String, String> hm = new HashMap<>();
-                                    hm.put("ToUserName", toUserName);
-                                    hm.put("FromUserName", fromUserName);
-                                    response.put("200 OK", new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm)));
-                                }
-                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
-                                {
-                                    response.put("200 OK", "success");
-                                }
-                            }
-                        }
-                    }
-                    catch (JSONException | XPathExpressionException | ParserConfigurationException | IOException | SAXException ignored)
-                    {
-                        response.put("200 OK", "success");
+                        case "0", "1" -> response.put("200 OK", state[1]);
+                        case "2" -> response.put("400 Bad Request", state[1]);
+                        default -> response.put("", "");
                     }
                 }
                 else
-                    response.put("400 Bad Request", "");
+                {
+                    String[] state = checkSign(request);
+                    if (state[0].equals("0"))
+                    {
+                        try
+                        {
+                            Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(body)));
+                            XPath xpath = XPathFactory.newInstance().newXPath();
+                            String toUserName = (String) xpath.evaluate("/xml/ToUserName/text()", document, XPathConstants.STRING);
+                            String fromUserName = (String) xpath.evaluate("/xml/FromUserName/text()", document, XPathConstants.STRING);
+                            String[] config = configLoader.getConfigs(xpath, document);
+                            String type = config[0];
+                            switch (type)
+                            {
+                                case "text" ->
+                                        response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[1] + "]]></Content></xml>");
+                                case "url" -> {
+                                    try
+                                    {
+                                        response.put("200 OK", new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], body));
+                                    }
+                                    catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
+                                    {
+                                        response.put("200 OK", "success");
+                                    }
+                                }
+                                case "proxyText" -> {
+                                    try
+                                    {
+                                        HashMap<String, String> hm = new HashMap<>();
+                                        hm.put("ToUserName", toUserName);
+                                        hm.put("FromUserName", fromUserName);
+                                        response.put("200 OK", new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm)));
+                                    }
+                                    catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
+                                    {
+                                        response.put("200 OK", "success");
+                                    }
+                                }
+                            }
+                        }
+                        catch (JSONException | XPathExpressionException | ParserConfigurationException | IOException | SAXException ignored)
+                        {
+                            response.put("200 OK", "success");
+                        }
+                    }
+                    else
+                        response.put("400 Bad Request", "");
+                }
             }
             return response;
         }, port);
