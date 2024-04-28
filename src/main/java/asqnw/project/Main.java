@@ -74,7 +74,7 @@ public class Main
         catch (StringIndexOutOfBoundsException ignored)
         {
             System.out.println("2.1配置文件设置异常，退出执行");
-//            System.exit(0);
+            System.exit(0);
         }
         System.out.println("三、获取微信服务器IP组");
         System.out.println("3.1获取公众号ACCESS_TOKEN");
@@ -92,7 +92,7 @@ public class Main
         catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException ignored)
         {
             System.out.println("获取失败，程序无法继续运行");
-//            System.exit(0);
+            System.exit(0);
         }
         System.out.println("准备完成，启动服务器");
         new HttpServer().start(request -> {
