@@ -74,7 +74,7 @@ public class Main
         catch (StringIndexOutOfBoundsException ignored)
         {
             System.out.println("2.1配置文件设置异常，退出执行");
-            System.exit(0);
+//            System.exit(0);
         }
         System.out.println("三、获取微信服务器IP组");
         System.out.println("3.1获取公众号ACCESS_TOKEN");
@@ -92,12 +92,12 @@ public class Main
         catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException ignored)
         {
             System.out.println("获取失败，程序无法继续运行");
-            System.exit(0);
+//            System.exit(0);
         }
         System.out.println("准备完成，启动服务器");
         new HttpServer().start(request -> {
             HashMap<String, String> response = new HashMap<>();
-            if (request.get(HttpServer.URL).get(0).equals("/"))
+            if (request.get(HttpServer.URL).get(0).equals("/auth"))
             {
 //            String userIp = HttpServer.findHeader(request.get(HttpServer.HEADER), "x-forwarded-for");//这里无需担心该请求头伪造问题，在Nginx中已经处理
                 String body;
@@ -163,6 +163,14 @@ public class Main
                     else
                         response.put("400 Bad Request", "");
                 }
+            }
+            else if (request.get(HttpServer.URL).get(0).equals("/"))
+            {
+                response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面，使用URL：/auth</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
+            }
+            else
+            {
+                response.put("403 Forbidden", "");
             }
             return response;
         }, port);
