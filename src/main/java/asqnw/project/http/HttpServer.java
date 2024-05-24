@@ -178,7 +178,7 @@ public final class HttpServer
                         pw.println("HTTP/1.1 " + (key = (String) result.keySet().toArray()[0]));
                         pw.println("Content-type:text/html");
                         pw.println();
-                        pw.println(result.get(key));
+                        pw.print(result.get(key));
 
                         pw.flush();
                         socket.close();
