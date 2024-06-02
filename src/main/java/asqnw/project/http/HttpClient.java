@@ -1,11 +1,16 @@
 package asqnw.project.http;
 
+import asqnw.project.Main;
 import asqnw.project.interfaces.MapString;
 
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
@@ -39,6 +44,8 @@ public class HttpClient
     {
         try
         {
+            if (!Main.CRT_FILE.isEmpty())
+                trustCertificate();
             final HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(15000);//设置连接主机服务器超时时间：15000毫秒
@@ -103,6 +110,8 @@ public class HttpClient
     {
         try
         {
+            if (!Main.CRT_FILE.isEmpty())
+                trustCertificate();
             final HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(15000);//设置连接主机服务器超时时间：15000毫秒
@@ -209,6 +218,69 @@ public class HttpClient
         else
             is = connection.getInputStream();
         return is;
+    }
+
+    private void trustCertificate() throws Exception
+    {
+        // 加载默认的信任管理器
+        TrustManagerFactory defaultTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        defaultTmf.init((KeyStore) null);
+        TrustManager[] defaultTrustManagers = defaultTmf.getTrustManagers();
+        X509TrustManager defaultTrustManager = (X509TrustManager) defaultTrustManagers[0];
+
+        // 加载自定义的证书
+        FileInputStream fis = new FileInputStream(Main.CRT_FILE);
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        X509Certificate customCert = (X509Certificate) cf.generateCertificate(fis);
+
+        // 创建一个KeyStore并将自定义证书添加到其中
+        KeyStore customKs = KeyStore.getInstance(KeyStore.getDefaultType());
+        customKs.load(null, null);
+        customKs.setCertificateEntry("custom-cert", customCert);
+
+        // 创建一个TrustManagerFactory并初始化它
+        TrustManagerFactory customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        customTmf.init(customKs);
+        TrustManager[] customTrustManagers = customTmf.getTrustManagers();
+        X509TrustManager customTrustManager = (X509TrustManager) customTrustManagers[0];
+
+        // 创建一个组合的TrustManager
+        X509TrustManager combinedTrustManager = new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+                try {
+                    defaultTrustManager.checkClientTrusted(chain, authType);
+                } catch (java.security.cert.CertificateException e) {
+                    customTrustManager.checkClientTrusted(chain, authType);
+                }
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+                try {
+                    defaultTrustManager.checkServerTrusted(chain, authType);
+                } catch (java.security.cert.CertificateException e) {
+                    customTrustManager.checkServerTrusted(chain, authType);
+                }
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                X509Certificate[] defaultIssuers = defaultTrustManager.getAcceptedIssuers();
+                X509Certificate[] customIssuers = customTrustManager.getAcceptedIssuers();
+                X509Certificate[] combinedIssuers = new X509Certificate[defaultIssuers.length + customIssuers.length];
+                System.arraycopy(defaultIssuers, 0, combinedIssuers, 0, defaultIssuers.length);
+                System.arraycopy(customIssuers, 0, combinedIssuers, defaultIssuers.length, customIssuers.length);
+                return combinedIssuers;
+            }
+        };
+
+        // 初始化SSLContext
+        SSLContext sc = SSLContext.getInstance("TLS");
+        sc.init(null, new TrustManager[]{combinedTrustManager}, new java.security.SecureRandom());
+
+        // 设置默认的SSLSocketFactory
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
     }
 
     public static final class NetCookie<K, V> extends HashMap<K, V>

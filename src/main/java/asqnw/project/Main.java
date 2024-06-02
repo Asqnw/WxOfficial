@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,6 +30,7 @@ public class Main
     public static String APPID;
     public static String APP_SECRET;
     public static String TOKEN;
+    public static String CRT_FILE;
     private static final ExecutorService threadPool = Executors.newCachedThreadPool();
     private static ConfigLoader configLoader;
 
@@ -64,6 +66,7 @@ public class Main
             APP_SECRET = configLoader.getProperty("APPSECRET");
             System.out.println("APPSECRET：" + APP_SECRET.substring(0, 6) + "***");
             TOKEN = configLoader.getProperty("TOKEN");
+            CRT_FILE = Optional.ofNullable(configLoader.getProperty("CRT_FILE")).orElse("");
             System.out.println("TOKEN：" + TOKEN.substring(0, 8) + "***");
         }
         catch (IOException e)
