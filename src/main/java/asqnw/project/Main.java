@@ -4,26 +4,39 @@ import asqnw.project.config.ConfigLoader;
 import asqnw.project.http.HttpClient;
 import asqnw.project.http.HttpServer;
 import asqnw.project.wxutil.SHA1;
+import asqnw.project.wxutil.TokenManager;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.w3c.dom.Document;
+import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Main
 {
@@ -33,11 +46,13 @@ public class Main
     public static String CRT_FILE;
     private static final ExecutorService threadPool = Executors.newCachedThreadPool();
     private static ConfigLoader configLoader;
+    public static TokenManager accessTokenMgr;
 
     public static void main(String[] args)
     {
-        int port = 10000;
+        int port = 0;
         ArrayList<String> WX_IPS = new ArrayList<>();
+        accessTokenMgr = TokenManager.getInstance();
         System.out.println("欢迎使用影幽网络工作室产品--微信公众号服务器\n\n现在准备启动必须内容，请稍等");
         System.out.println("一、设置服务器端口");
         for (int i = 0; i < args.length; i++)
@@ -47,16 +62,16 @@ public class Main
                 try
                 {
                     port = Integer.parseInt(args[i + 1]);
-                    System.out.println("1.1设置端口：" + port);
                 }
                 catch (Exception e)
                 {
-                    System.out.println("1.1读取端口参数异常，使用默认参数10000");
+                    System.out.println("1.1读取端口参数异常，使用随机端口");
                 }
             }
         }
-        if (port == 10000)
-            System.out.println("1.1未设置端口参数，使用默认参数10000");
+        if (port == 0)
+            System.out.println("1.1未设置端口参数，使用随机端口");
+
         System.out.println("二、加载配置文件");
         try
         {
@@ -79,15 +94,15 @@ public class Main
             System.out.println("2.1配置文件设置异常，退出执行");
             System.exit(0);
         }
+
         System.out.println("三、获取微信服务器IP组");
         System.out.println("3.1获取公众号ACCESS_TOKEN");
         try
         {
-            HttpClient httpClient;
-            String ACCESS_TOKEN = new JSONObject((httpClient = new HttpClient()).getReqStr("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=" + APPID + "&secret=" + APP_SECRET)).getString("access_token");
-            System.out.println("3.1获取ACCESS_TOKEN成功(为了某些情况下安全，只显示部分)：" + (ACCESS_TOKEN.substring(0, 10)) + "***");
+            HttpClient httpClient = new HttpClient();
+            System.out.println("3.1获取ACCESS_TOKEN成功(为了某些情况下安全，只显示部分)：" + (accessTokenMgr.getAccessToken().substring(0, 10)) + "***");
             System.out.println("3.2准备获取微信服务器的IP组");
-            JSONArray array = new JSONObject(httpClient.getReqStr("https://api.weixin.qq.com/cgi-bin/get_api_domain_ip?access_token=" + ACCESS_TOKEN)).getJSONArray("ip_list");
+            JSONArray array = new JSONObject(httpClient.getReqStr(WxServerInfo.DOMAIN + "/cgi-bin/get_api_domain_ip?access_token=" + accessTokenMgr.getAccessToken())).getJSONArray("ip_list");
             for (int i = 0; i < array.length(); i++)
                 WX_IPS.add(array.getString(i));
             System.out.println("3.2获取微信服务器IP组成功，数量：" + WX_IPS.size());
@@ -97,12 +112,13 @@ public class Main
             System.out.println("获取失败，程序无法继续运行");
             System.exit(0);
         }
+
         System.out.println("准备完成，启动服务器");
         new HttpServer().start(request -> {
             HashMap<String, String> response = new HashMap<>();
             if (request.get(HttpServer.URL).get(0).equals("/auth"))
             {
-//            String userIp = HttpServer.findHeader(request.get(HttpServer.HEADER), "x-forwarded-for");//这里无需担心该请求头伪造问题，在Nginx中已经处理
+//                String userIp = HttpServer.findHeader(request.get(HttpServer.HEADER), "x-forwarded-for");//这里无需担心该请求头伪造问题，在Nginx中已经处理
                 String body;
                 System.out.println(request);
                 ArrayList<String> postBody = request.get(HttpServer.BODY);
@@ -127,12 +143,18 @@ public class Main
                             XPath xpath = XPathFactory.newInstance().newXPath();
                             String toUserName = (String) xpath.evaluate("/xml/ToUserName/text()", document, XPathConstants.STRING);
                             String fromUserName = (String) xpath.evaluate("/xml/FromUserName/text()", document, XPathConstants.STRING);
-                            String[] config = configLoader.getConfigs(xpath, document);
+                            String MsgId = (String) xpath.evaluate("/xml/MsgId/text()", document, XPathConstants.STRING);
+                            String CreateTime = (String) xpath.evaluate("/xml/CreateTime/text()", document, XPathConstants.STRING);
+                            ConfigLoader.Config configC = configLoader.getConfigs(xpath, document);
+                            AtomicReference<String> ars = new AtomicReference<>();
+                            if (configC.isText())
+                                ars.set((String) xpath.evaluate("/xml/Content/text()", document, XPathConstants.STRING));
+                            String[] config = configC.getConfig();
                             String type = config[0];
                             switch (type)
                             {
                                 case "text" ->
-                                        response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[1] + "]]></Content></xml>");
+                                    response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[1] + "]]></Content></xml>");
                                 case "url" -> {
                                     try
                                     {
@@ -149,17 +171,106 @@ public class Main
                                         HashMap<String, String> hm = new HashMap<>();
                                         hm.put("ToUserName", toUserName);
                                         hm.put("FromUserName", fromUserName);
-                                        response.put("200 OK", new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm)));
+                                        String contentResp = new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm));
+                                        if (!config[3].isEmpty())
+                                        {
+                                            Document document2 = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(contentResp)));
+                                            XPath xpath2 = XPathFactory.newInstance().newXPath();
+                                            Node contentNode = (Node) xpath2.evaluate("/xml/Content", document2, XPathConstants.NODE);
+                                            if (contentNode != null)
+                                            {
+                                                hm.put("Content", contentNode.getTextContent());
+                                                contentNode.setTextContent(executeText(config[3], hm));
+                                            }
+                                            StringWriter writer = new StringWriter();
+                                            Transformer transformer = TransformerFactory.newInstance().newTransformer();
+                                            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes"); //去掉XML
+                                            transformer.transform(new DOMSource(document2), new StreamResult(writer));
+                                            response.put("200 OK", writer.toString());
+                                        }
+                                        else
+                                            response.put("200 OK", contentResp);
                                     }
-                                    catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
+                                    catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | TransformerException ignored)
                                     {
                                         response.put("200 OK", "success");
                                     }
                                 }
+                                case "urlText" -> {
+                                    response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[2] + "]]></Content></xml>");
+                                    thread(() -> {
+                                        Matcher urlSend = Pattern.compile("(get|post),(.*)").matcher(config[3]);
+                                        if (urlSend.matches())
+                                        {
+                                            String requestFunc = urlSend.group(1);
+                                            String resp = "";
+                                            HashMap<String, String> hm = new HashMap<>();
+                                            hm.put("ToUserName", toUserName);
+                                            hm.put("FromUserName", fromUserName);
+                                            hm.put("CreateTime", CreateTime);
+                                            hm.put("MsgId", MsgId);
+                                            if (configC.isText())
+                                                hm.put("Content", ars.get());
+                                            else
+                                                hm.put("Content", "");
+                                            String reqParam = executeText(urlSend.group(2), hm);
+                                            if (requestFunc.equals("get"))
+                                            {
+                                                try
+                                                {
+                                                    resp = new HttpClient().getReqStr(config[1] + reqParam);
+                                                }
+                                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
+                                                {
+                                                    resp = e.getMessage();
+                                                }
+                                            }
+                                            else if (requestFunc.equals("post"))
+                                            {
+                                                try
+                                                {
+                                                    resp = new HttpClient().postReqStr(config[1], reqParam);
+
+                                                }
+                                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
+                                                {
+                                                    resp = e.getMessage();
+                                                }
+                                            }
+                                            Matcher urlResp = Pattern.compile("(str|array),(.*)").matcher(config[4]);
+                                            if (urlResp.matches())
+                                            {
+                                                String[] splitKey = urlResp.group(2).split("\\.");
+                                                JSONObject json = new JSONObject(resp);
+                                                for (int i = 0; i < splitKey.length - 1; i++)
+                                                    json = new JSONObject(json.get(splitKey[i]).toString());
+                                                if (urlResp.group(1).equals("str"))
+                                                {
+                                                    String message = json.getString(splitKey[splitKey.length - 1]);
+                                                    sendMsg(fromUserName, message);
+                                                }
+                                                else if (urlResp.group(1).equals("array"))
+                                                {
+                                                    JSONArray ja = json.getJSONArray(splitKey[splitKey.length - 1]);
+                                                    for (int i = 0; i < ja.length(); i++)
+                                                    {
+                                                        String message = ja.getString(i);
+                                                        sendMsg(fromUserName, message);
+                                                    }
+                                                }
+                                            }
+//                                            else
+//                                                throw new IOException();
+                                        }
+//                                        else
+//                                            throw new IOException();
+                                    });
+                                }
                             }
                         }
-                        catch (JSONException | XPathExpressionException | ParserConfigurationException | IOException | SAXException ignored)
+                        catch (JSONException | XPathExpressionException | ParserConfigurationException | IOException | SAXException | NullPointerException e)
                         {
+                            e.printStackTrace(System.err);
                             response.put("200 OK", "success");
                         }
                     }
@@ -168,15 +279,26 @@ public class Main
                 }
             }
             else if (request.get(HttpServer.URL).get(0).equals("/"))
-            {
                 response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面，使用URL：/auth</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
-            }
             else
-            {
                 response.put("403 Forbidden", "");
-            }
+
             return response;
         }, port);
+    }
+
+    private static void sendMsg(String fromUserName, String message)
+    {
+        try
+        {
+            System.out.println(new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/custom/send?access_token=" + accessTokenMgr.getAccessToken(), "{\"touser\":\"" + fromUserName + "\",\"msgtype\":\"text\",\"text\":{\"content\":\"" + message + "\"}}"));
+        }
+        catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError e)
+        {
+            PrintStream ps = System.out;
+            ps.print("主动发送消息异常：");
+            e.printStackTrace(ps);
+        }
     }
 
     public static void thread(Runnable runnable)
@@ -212,6 +334,12 @@ public class Main
         return msg.replaceAll("%ToUserName%", body.get("ToUserName")).
                 replaceAll("%FromUserName%", body.get("FromUserName")).
                 replaceAll("%MsgId%", body.get("MsgId")).
-                replaceAll("%CreateTime%", String.valueOf(System.currentTimeMillis() / 1000));
+                replaceAll("%CreateTime%", body.containsKey("CreateTime") ? body.get("CreateTime") : String.valueOf(System.currentTimeMillis() / 1000)).
+                replaceAll("%Content%", body.getOrDefault("Content", ""));
+    }
+
+    public static final class WxServerInfo
+    {
+        public static final String DOMAIN = "https://api.weixin.qq.com";
     }
 }

@@ -52,6 +52,7 @@ public final class HttpServer
     {
         try (ServerSocket serverSocket = new ServerSocket(port))
         {
+            System.out.println("服务器所使用端口：" + serverSocket.getLocalPort());
             while (true)
             {
                 Socket socket = serverSocket.accept();
