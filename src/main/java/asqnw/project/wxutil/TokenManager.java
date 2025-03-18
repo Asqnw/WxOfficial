@@ -2,14 +2,9 @@ package asqnw.project.wxutil;
 
 import asqnw.project.Main;
 import asqnw.project.http.HttpClient;
-import lombok.Data;
-import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.time.Instant;
 
 /**
  * @Author 暗影之风
@@ -17,141 +12,112 @@ import java.util.concurrent.atomic.AtomicReference;
  * @Description 微信公众号ACCESS_TOKEN
  */
 @SuppressWarnings("JavadocDeclaration")
-public class TokenManager
+public class TokenManager implements Runnable
 {
-    private static volatile TokenManager instance;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private final AtomicReference<TokenInfo> tokenInfo = new AtomicReference<>();
-    private static final int REFRESH_MARGIN = 50;//提前50秒刷新
-    private static final HttpClient httpClient = new HttpClient();
+    public static final TokenManager instance = new TokenManager();
+    private boolean running = false;
+    private Thread thread = null;
+    private String token = "";
+    private long expires = 0;
+    private long update = 0;
 
-    @Data
-    private static class TokenInfo
+    @Override
+    public void run()
     {
-        private String token;
-        private long expiresAt;
-    }
-
-    private TokenManager()
-    {
-        refreshAccessToken();
-    }
-
-    public static TokenManager getInstance()
-    {
-        if (instance == null)
+        this.running = true;
+        while (true)
         {
-            synchronized (TokenManager.class)
+            try
             {
-                if (instance == null)
-                    instance = new TokenManager();
+                long currentTime = currentTimeSecond();
+                if (this.update + (this.expires - 50) < currentTime || this.token.isEmpty())
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (this.refreshAccessToken())
+                        {
+                            Thread.sleep(Math.max(0, this.update + (this.expires - 50) - currentTime) * 1000);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (InterruptedException ignored)
+            {
+                break;
             }
         }
-        return instance;
+        this.running = false;
+    }
+
+    public void start()
+    {
+        if (this.running)
+            return;
+        this.thread = new Thread(this);
+        this.thread.start();
+        while (!this.running || token.isEmpty())
+        {
+            try
+            {
+                Thread.sleep(100);
+            }
+            catch (InterruptedException ignored)
+            {}
+        }
+    }
+
+    public void stop()
+    {
+        if (!this.running || this.thread == null)
+            return;
+        try
+        {
+            this.thread.interrupt();
+            if (this.thread.isAlive())
+                this.thread.join();
+        }
+        catch (InterruptedException ignored)
+        {}
     }
 
     public String getAccessToken()
     {
-        TokenInfo current = tokenInfo.get();
-        if (shouldRefresh(current))
-        {
-           synchronized (this)
-           {
-                current = tokenInfo.get();
-                if (shouldRefresh(current))
-                    refreshAccessTokenSync();
-            }
-        }
-        return tokenInfo.get().token;
+        return this.token.isEmpty() ? this.positiveRefreshAccessToken() : this.token;
     }
 
-    private boolean shouldRefresh(TokenInfo tokenInfo)
+    private String positiveRefreshAccessToken()
     {
-        return tokenInfo == null || System.currentTimeMillis() >= tokenInfo.expiresAt - REFRESH_MARGIN * 1000;
+        return this.refreshAccessToken() ? this.token : "";
     }
 
-    private void refreshAccessTokenSync()
+    private boolean refreshAccessToken()
     {
-        try
-        {
-            JSONObject json = WeChatApi.refreshAccessToken();
-            updateTokenAndScheduleRefresh(json);
-        }
-        catch (Exception e)
-        {
-            handleRefreshFailure(e);
-        }
-    }
-
-    private void updateTokenAndScheduleRefresh(JSONObject json)
-    {
-        String newToken = json.getString("access_token");
-        int expiresIn = json.getInt("expires_in");
-        long newExpiresAt = System.currentTimeMillis() + expiresIn * 1000L;
-        TokenInfo ti = new TokenInfo();
-        ti.setToken(newToken);
-        ti.setExpiresAt(newExpiresAt);
-        System.out.println("ACCESS_TOKEN更新: " + (ti.getToken().substring(0, 10)) + "***");
-        tokenInfo.set(ti);
-
-        long delay = Math.max(expiresIn - REFRESH_MARGIN, 0);
-        scheduler.schedule(this::refreshAccessToken, delay, TimeUnit.SECONDS);
-    }
-
-    private void handleRefreshFailure(Exception e)
-    {
-        int maxRetries = 3;
-        for (int retry = 0; retry < maxRetries; retry++)
+        for (int i = 0; i < 3; i++)
         {
             try
             {
-                Thread.sleep(1000L * (1 << retry)); //指数退避
-                JSONObject json = WeChatApi.refreshAccessToken();
-                updateTokenAndScheduleRefresh(json);
-                return;
-            }
-            catch (InterruptedException ie)
-            {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("刷新Token被中断", ie);
-            }
-            catch (Exception ex)
-            {
-                if (retry == maxRetries - 1) {
-                    throw new RuntimeException("Token刷新失败，已重试" + maxRetries + "次", ex);
+                HttpClient httpClient = new HttpClient();
+                JSONObject json = new JSONObject(httpClient.getReqStr(Main.WxServerInfo.DOMAIN + "/cgi-bin/token?grant_type=client_credential&appid=" + Main.APPID + "&secret=" + Main.APP_SECRET));
+                System.out.println("更新ACCESS_TOKEN：" + json);
+                if (json.has("access_token") && json.has("expires_in"))
+                {
+                    this.token = json.getString("access_token");
+                    this.expires = json.getInt("expires_in");
+                    this.update = currentTimeSecond();
+                    return true;
                 }
             }
+            catch (Exception e)
+            {
+                e.printStackTrace(System.out);
+            }
         }
-        e.printStackTrace(System.out);
+        return false;
     }
 
-    private void refreshAccessToken()
+    private long currentTimeSecond()
     {
-        try
-        {
-            JSONObject json = WeChatApi.refreshAccessToken();
-            updateTokenAndScheduleRefresh(json);
-        }
-        catch (Exception e)
-        {
-            scheduler.schedule(this::refreshAccessToken, 10, TimeUnit.SECONDS);
-        }
-    }
-
-    public void shutdown()
-    {
-        scheduler.shutdown();
-    }
-
-    private static class WeChatApi
-    {
-        static JSONObject refreshAccessToken() throws HttpClient.HttpException.UnAuthorize, HttpClient.HttpException.Unknown, HttpClient.HttpException.ServerError, HttpClient.HttpException.Forbidden
-        {
-            JSONObject accessTokenJson = new JSONObject(httpClient.getReqStr(Main.WxServerInfo.DOMAIN + "/cgi-bin/token?grant_type=client_credential&appid=" + Main.APPID + "&secret=" + Main.APP_SECRET));
-            if (accessTokenJson.has("access_token"))
-                return accessTokenJson;
-            else
-                throw new JSONException(accessTokenJson.toString());
-        }
+        return Instant.now().getEpochSecond();
     }
 }

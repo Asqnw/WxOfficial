@@ -46,13 +46,11 @@ public class Main
     public static String CRT_FILE;
     private static final ExecutorService threadPool = Executors.newCachedThreadPool();
     private static ConfigLoader configLoader;
-    public static TokenManager accessTokenMgr;
 
     public static void main(String[] args)
     {
         int port = 0;
         ArrayList<String> WX_IPS = new ArrayList<>();
-        accessTokenMgr = TokenManager.getInstance();
         System.out.println("欢迎使用影幽网络工作室产品--微信公众号服务器\n\n现在准备启动必须内容，请稍等");
         System.out.println("一、设置服务器端口");
         for (int i = 0; i < args.length; i++)
@@ -100,9 +98,9 @@ public class Main
         try
         {
             HttpClient httpClient = new HttpClient();
-            System.out.println("3.1获取ACCESS_TOKEN成功(为了某些情况下安全，只显示部分)：" + (accessTokenMgr.getAccessToken().substring(0, 10)) + "***");
+            System.out.println("3.1获取ACCESS_TOKEN成功(为了某些情况下安全，只显示部分)：" + (TokenManager.instance.getAccessToken().substring(0, 10)) + "***");
             System.out.println("3.2准备获取微信服务器的IP组");
-            JSONArray array = new JSONObject(httpClient.getReqStr(WxServerInfo.DOMAIN + "/cgi-bin/get_api_domain_ip?access_token=" + accessTokenMgr.getAccessToken())).getJSONArray("ip_list");
+            JSONArray array = new JSONObject(httpClient.getReqStr(WxServerInfo.DOMAIN + "/cgi-bin/get_api_domain_ip?access_token=" + TokenManager.instance.getAccessToken())).getJSONArray("ip_list");
             for (int i = 0; i < array.length(); i++)
                 WX_IPS.add(array.getString(i));
             System.out.println("3.2获取微信服务器IP组成功，数量：" + WX_IPS.size());
@@ -114,6 +112,7 @@ public class Main
         }
 
         System.out.println("准备完成，启动服务器");
+        TokenManager.instance.start();
         new HttpServer().start(request -> {
             HashMap<String, String> response = new HashMap<>();
             if (request.get(HttpServer.URL).get(0).equals("/auth"))
@@ -291,7 +290,7 @@ public class Main
     {
         try
         {
-            System.out.println(new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/custom/send?access_token=" + accessTokenMgr.getAccessToken(), "{\"touser\":\"" + fromUserName + "\",\"msgtype\":\"text\",\"text\":{\"content\":\"" + message + "\"}}"));
+            System.out.println(new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/custom/send?access_token=" + TokenManager.instance.getAccessToken(), "{\"touser\":\"" + fromUserName + "\",\"msgtype\":\"text\",\"text\":{\"content\":\"" + message + "\"}}"));
         }
         catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError e)
         {
