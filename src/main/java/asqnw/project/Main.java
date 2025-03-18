@@ -145,6 +145,8 @@ public class Main
                             String MsgId = (String) xpath.evaluate("/xml/MsgId/text()", document, XPathConstants.STRING);
                             String CreateTime = (String) xpath.evaluate("/xml/CreateTime/text()", document, XPathConstants.STRING);
                             ConfigLoader.Config configC = configLoader.getConfigs(xpath, document);
+                            if (configC.getConfig()[0] == null)
+                                throw new IOException();
                             AtomicReference<String> ars = new AtomicReference<>();
                             if (configC.isText())
                                 ars.set((String) xpath.evaluate("/xml/Content/text()", document, XPathConstants.STRING));
@@ -269,7 +271,6 @@ public class Main
                         }
                         catch (JSONException | XPathExpressionException | ParserConfigurationException | IOException | SAXException | NullPointerException e)
                         {
-                            e.printStackTrace(System.err);
                             response.put("200 OK", "success");
                         }
                     }
