@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream;
 public class HttpClient
 {
     private final HttpClient.NetCookie<String, String> cookie;
-    private final MapString requestProperty;
+    public final MapString requestProperty;
 
     public HttpClient()
     {

@@ -278,8 +278,23 @@ public class Main
                         response.put("400 Bad Request", "");
                 }
             }
+            else if (request.get(HttpServer.URL).get(0).equals("/access_token"))
+            {
+                System.out.println(request);
+                ArrayList<String> postBody = request.get(HttpServer.BODY);
+                if ((postBody == null ? "" : postBody.get(0)).isEmpty())//GET请求
+                {
+                    ArrayList<String> params = request.get(HttpServer.PARAM);
+                    if (HttpServer.findParam(params, "secret").equals(Main.APP_SECRET))
+                        response.put("200 OK", new JSONObject().put("access_token", TokenManager.instance.getAccessToken()).put("expires_in", TokenManager.instance.getExpiresIn()).toString());
+                    else
+                        response.put("401 Unauthorized", "");
+                }
+                else
+                    response.put("400 Bad Request", "");
+            }
             else if (request.get(HttpServer.URL).get(0).equals("/"))
-                response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面，使用URL：/auth</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
+                response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面</p><p>数据URL：/auth<br>获取ACCESS_TOKEN URL：/access_token?secret=填写配置文件的，GET请求</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
             else
                 response.put("403 Forbidden", "");
 

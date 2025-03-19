@@ -20,6 +20,7 @@ public class TokenManager implements Runnable
     private String token = "";
     private long expires = 0;
     private long update = 0;
+    private static final long BEFORE_UPDATE_TIME = 50;
 
     @Override
     public void run()
@@ -29,14 +30,13 @@ public class TokenManager implements Runnable
         {
             try
             {
-                long currentTime = currentTimeSecond();
-                if (this.update + (this.expires - 50) < currentTime || this.token.isEmpty())
+                if (this.getExpiresIn() < 0 || this.token.isEmpty())
                 {
                     for (int i = 0; i < 3; i++)
                     {
                         if (this.refreshAccessToken())
                         {
-                            Thread.sleep(Math.max(0, this.update + (this.expires - 50) - currentTime) * 1000);
+                            Thread.sleep(Math.max(0, this.getExpiresIn()) * 1000);
                             break;
                         }
                     }
@@ -86,6 +86,11 @@ public class TokenManager implements Runnable
         return this.token.isEmpty() ? this.positiveRefreshAccessToken() : this.token;
     }
 
+    public long getExpiresIn()
+    {
+        return this.update + (this.expires - Math.min(BEFORE_UPDATE_TIME, (long) (expires * 0.8))) - this.currentTimeSecond();
+    }
+
     private String positiveRefreshAccessToken()
     {
         return this.refreshAccessToken() ? this.token : "";
@@ -98,13 +103,14 @@ public class TokenManager implements Runnable
             try
             {
                 HttpClient httpClient = new HttpClient();
+                httpClient.requestProperty.put("ThroughProxy", "1");//配合Fiddler
                 JSONObject json = new JSONObject(httpClient.getReqStr(Main.WxServerInfo.DOMAIN + "/cgi-bin/token?grant_type=client_credential&appid=" + Main.APPID + "&secret=" + Main.APP_SECRET));
                 System.out.println("更新ACCESS_TOKEN：" + json);
                 if (json.has("access_token") && json.has("expires_in"))
                 {
                     this.token = json.getString("access_token");
                     this.expires = json.getInt("expires_in");
-                    this.update = currentTimeSecond();
+                    this.update = this.currentTimeSecond();
                     return true;
                 }
             }
