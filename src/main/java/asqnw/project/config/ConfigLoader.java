@@ -1,6 +1,7 @@
 package asqnw.project.config;
 
 import lombok.Data;
+import org.json.JSONObject;
 import org.w3c.dom.Document;
 
 import javax.xml.xpath.XPath;
@@ -9,7 +10,9 @@ import javax.xml.xpath.XPathExpressionException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -36,7 +39,7 @@ public class ConfigLoader
         return new String(this.properties.getProperty(key).getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
     }
 
-    public Config getConfigs(XPath xPath, Document document)
+    public Config getConfigs(String template, XPath xPath, Document document)
     {
         String[] result = new String[5];
         Config config = new Config();
@@ -46,7 +49,7 @@ public class ConfigLoader
             {
                 String MsgType;
                 String baseKey;
-                if (keyStr.endsWith(".MsgType") && xPath.evaluate("/xml/MsgType/text()", document, XPathConstants.STRING).equals(MsgType = this.getProperty(keyStr)))
+                if (keyStr.endsWith(".MsgType") && ((template != null && "template".equals(MsgType = this.getProperty(keyStr))) || (xPath != null && document != null && xPath.evaluate("/xml/MsgType/text()", document, XPathConstants.STRING).equals(MsgType = this.getProperty(keyStr)))))
                 {
                     baseKey = keyStr.substring(0, keyStr.lastIndexOf(".MsgType"));
                     if (MsgType.equals("event"))
@@ -62,16 +65,12 @@ public class ConfigLoader
                                 case "CLICK" -> {//点击菜单选项
                                     String eventKey = (String) xPath.evaluate("/xml/EventKey/text()", document, XPathConstants.STRING);
                                     if (this.getProperty(baseKey + ".EventKey").equals(eventKey))
-                                    {
                                         setValue(result, baseKey);
-                                    }
                                 }
                                 case "SCAN" -> {//扫码
                                     String eventKey = (String) xPath.evaluate("/xml/EventKey/text()", document, XPathConstants.STRING);
                                     if (Pattern.matches(this.getProperty(baseKey + ".EventKey"), eventKey))
-                                    {
                                         setValue(result, baseKey);
-                                    }
                                 }
                             }
                         }
@@ -81,8 +80,30 @@ public class ConfigLoader
                         config.setText(true);
                         String content = (String) xPath.evaluate("/xml/Content/text()", document, XPathConstants.STRING);
                         if (Pattern.matches(this.getProperty(baseKey + ".Content"), content))
-                        {
                             setValue(result, baseKey);
+                    }
+                    else if (MsgType.equals("template"))//模板消息
+                    {
+                        if (this.getProperty(baseKey + ".Content").equals(template))
+                        {
+                            config.setText(false);
+                            String templateConfig = this.getProperty(baseKey + ".templateKeyMapping");
+                            if (!templateConfig.isEmpty())
+                            {
+                                JSONObject templateJson = new JSONObject(templateConfig);
+                                Set<String> keys = templateJson.keySet();
+                                String[] tConfig = new String[keys.size() * 2];
+                                int index = 0;
+                                for (String k : keys)
+                                {
+                                    tConfig[index] = k;
+                                    tConfig[++index] = templateJson.getString(k);
+                                    index++;
+                                }
+                                result[0] = Arrays.toString(tConfig);
+                            }
+                            else
+                                result[0] = "";
                         }
                     }
                 }

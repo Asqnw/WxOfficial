@@ -93,6 +93,7 @@ public class Main
             System.exit(0);
         }
 
+        TokenManager.instance.start();
         System.out.println("三、获取微信服务器IP组");
         System.out.println("3.1获取公众号ACCESS_TOKEN");
         try
@@ -112,14 +113,13 @@ public class Main
         }
 
         System.out.println("准备完成，启动服务器");
-        TokenManager.instance.start();
         new HttpServer().start(request -> {
             HashMap<String, String> response = new HashMap<>();
             if (request.get(HttpServer.URL).get(0).equals("/auth"))
             {
 //                String userIp = HttpServer.findHeader(request.get(HttpServer.HEADER), "x-forwarded-for");//这里无需担心该请求头伪造问题，在Nginx中已经处理
                 String body;
-                System.out.println(request);
+                System.out.println(request.toString().replaceAll("\n", "\\\\n"));
                 ArrayList<String> postBody = request.get(HttpServer.BODY);
                 if ((body = (postBody == null ? "" : postBody.get(0))).isEmpty())//GET请求
                 {
@@ -144,7 +144,7 @@ public class Main
                             String fromUserName = (String) xpath.evaluate("/xml/FromUserName/text()", document, XPathConstants.STRING);
                             String MsgId = (String) xpath.evaluate("/xml/MsgId/text()", document, XPathConstants.STRING);
                             String CreateTime = (String) xpath.evaluate("/xml/CreateTime/text()", document, XPathConstants.STRING);
-                            ConfigLoader.Config configC = configLoader.getConfigs(xpath, document);
+                            ConfigLoader.Config configC = configLoader.getConfigs(null, xpath, document);
                             if (configC.getConfig()[0] == null)
                                 throw new IOException();
                             AtomicReference<String> ars = new AtomicReference<>();
@@ -280,7 +280,7 @@ public class Main
             }
             else if (request.get(HttpServer.URL).get(0).equals("/access_token"))
             {
-                System.out.println(request);
+                System.out.println(request.toString().replaceAll("\n", "\\\\n"));
                 ArrayList<String> postBody = request.get(HttpServer.BODY);
                 if ((postBody == null ? "" : postBody.get(0)).isEmpty())//GET请求
                 {
@@ -293,8 +293,55 @@ public class Main
                 else
                     response.put("400 Bad Request", "");
             }
+            else if (request.get(HttpServer.URL).get(0).equals("/template"))
+            {
+                System.out.println(request.toString().replaceAll("\n", "\\\\n"));
+                ArrayList<String> postBody = request.get(HttpServer.BODY);
+                String body;
+                if (!(body = (postBody == null ? "" : postBody.get(0))).isEmpty())//GET请求
+                {
+                    ArrayList<String> params = request.get(HttpServer.PARAM);
+                    if (HttpServer.findParam(params, "access_token").equals(TokenManager.instance.getAccessToken()))
+                    {
+                        try
+                        {
+                            String str;
+                            JSONObject templateJson = new JSONObject(body);
+                            ConfigLoader.Config configC = configLoader.getConfigs(templateJson.getString("template_id"), null, null);
+                            if (configC.getConfig()[0] == null)
+                                throw new JSONException("null body");
+                            JSONObject sendJson;
+                            if (!configC.getConfig()[0].isEmpty())
+                            {
+                                String[] config = (str = (configC.getConfig()[0].replaceAll(" ", ""))).substring(1, str.length() - 1).split(",");
+                                JSONObject templateData = templateJson.getJSONObject("data");
+                                for (int i = 0; i < config.length; i++)
+                                {
+                                    Object oldData = templateData.get(config[i]);
+                                    templateData.remove(config[i++]);
+                                    templateData.put(config[i], oldData);
+                                }
+                                templateJson.remove("data");
+                                sendJson = templateJson.put("data", templateData);
+                            }
+                            else
+                                sendJson = templateJson;
+
+                            response.put("200 OK", new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/template/send?access_token=" + TokenManager.instance.getAccessToken(), sendJson.toString()));
+                        }
+                        catch (JSONException | HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
+                        {
+                            response.put("400 Bad Request", "");
+                        }
+                    }
+                    else
+                        response.put("401 Unauthorized", "");
+                }
+                else
+                    response.put("400 Bad Request", "");
+            }
             else if (request.get(HttpServer.URL).get(0).equals("/"))
-                response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面</p><p>数据URL：/auth<br>获取ACCESS_TOKEN URL：/access_token?secret=填写配置文件的，GET请求</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
+                response.put("200 OK", "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>影幽网络-公众号服务器代理</title><style>body {font-family: \"Microsoft YaHei\", sans-serif;text-align: center;margin: 40px;}h1 {color: #339900;}p {font-size: 18px;}.contact-info {margin-top: 20px;}.contact-info a {color: #0066cc;text-decoration: none;}.contact-info a:hover {text-decoration: underline;}</style></head><body><h1>欢迎访问</h1><h1>影幽网络公众号服务器代理程序</h1><p>您已成功访问我们的服务器默认界面</p><p>数据URL：/auth<br>获取ACCESS_TOKEN URL：/access_token?secret=填写配置文件的，GET请求<br>动态修改模板URL：/template?secret=填写配置文件的，POST请求</p><div class=\"contact-info\"><p>如有任何问题或建议，请通过以下方式联系我们：</p><p>Github: <a href=\"https://github.com/Asqnw/WxOfficial\">点击进入</a></p></div></body></html>");
             else
                 response.put("403 Forbidden", "");
 
