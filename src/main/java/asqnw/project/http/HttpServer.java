@@ -70,12 +70,15 @@ public final class HttpServer
                         boolean isPost = false;
                         boolean isGet = false;
                         int postBodyLen = 0;
-                        this.request.put(COOKIE, new ArrayList<>());
+                        if (!this.request.containsKey(COOKIE) || this.request.get(COOKIE).isEmpty())
+                            this.request.put(COOKIE, new ArrayList<>());
                         this.request.put(HEADER, new ArrayList<>());
                         for (int i = 0; (requestHeader = bd.readLine()) != null && !requestHeader.isEmpty(); i++)
                         {
                             if (i == 0 && requestHeader.startsWith(GET_TAG))//GET请求
                             {
+                                if (this.request.containsKey(BODY) && !this.request.get(BODY).isEmpty())
+                                    this.request.remove(BODY);
                                 isGet = true;
                                 this.request.put(TYPE, new ArrayList<>() {{this.add(GET_TAG);}});
                                 String url = requestHeader.substring(GET_TAG.length(), requestHeader.lastIndexOf(URL_END_TAG)).trim();
