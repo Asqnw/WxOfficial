@@ -301,7 +301,7 @@ public class Main
                 if (!(body = (postBody == null ? "" : postBody.get(0))).isEmpty())//GET请求
                 {
                     ArrayList<String> params = request.get(HttpServer.PARAM);
-                    if (HttpServer.findParam(params, "access_token").equals(TokenManager.instance.getAccessToken()))
+                    if (HttpServer.findParam(params, "secret").equals(Main.APP_SECRET))
                     {
                         try
                         {
