@@ -96,9 +96,8 @@ public class ConfigLoader
                                 int index = 0;
                                 for (String k : keys)
                                 {
-                                    tConfig[index] = k;
-                                    tConfig[++index] = templateJson.getString(k);
-                                    index++;
+                                    tConfig[index++] = k;
+                                    tConfig[index++] = templateJson.getString(k);
                                 }
                                 result[0] = Arrays.toString(tConfig);
                             }

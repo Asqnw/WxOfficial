@@ -18,6 +18,8 @@ import java.util.Arrays;
  */
 public class SHA1
 {
+    public static final String DOMAIN = "https://api.weixin.qq.com";
+
     /**
      * 用SHA1算法生成安全签名
      *

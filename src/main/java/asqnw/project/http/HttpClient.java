@@ -49,7 +49,7 @@ public class HttpClient
             final HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(15000);//设置连接主机服务器超时时间：15000毫秒
-//            connection.setReadTimeout(60000);//设置读取远程返回的数据时间：60000毫秒
+            connection.setReadTimeout(0);//设置读取远程返回的数据时间：无限时间
             connection.setDoInput(true);//设置输入流采用字节流
             connection.setDoOutput(false);//设置成true会自动变成POST请求
             //添加请求头
@@ -115,7 +115,7 @@ public class HttpClient
             final HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(15000);//设置连接主机服务器超时时间：15000毫秒
-//            connection.setReadTimeout(60000);//设置读取远程返回的数据时间：60000毫秒
+            connection.setReadTimeout(0);//设置读取远程返回的数据时间：无限时间
             connection.setDoInput(true);//设置输入流采用字节流
             connection.setDoOutput(true);//设置输出流采用字节流
             if (!this.cookie.isEmpty())

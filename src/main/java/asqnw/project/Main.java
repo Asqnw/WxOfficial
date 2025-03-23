@@ -29,9 +29,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,7 +43,9 @@ public class Main
     public static String TOKEN;
     public static String CRT_FILE;
     private static final ExecutorService threadPool = Executors.newCachedThreadPool();
+    private static final int ONCE_MESSAGE_LIMIT = 5;
     private static ConfigLoader configLoader;
+    private static final Object[] urlTextSendArrayWait = new Object[]{false, false, 0};//是否需要等待，需要发送等待，剩余发送次数
 
     public static void main(String[] args)
     {
@@ -101,7 +101,7 @@ public class Main
             HttpClient httpClient = new HttpClient();
             System.out.println("3.1获取ACCESS_TOKEN成功(为了某些情况下安全，只显示部分)：" + (TokenManager.instance.getAccessToken().substring(0, 10)) + "***");
             System.out.println("3.2准备获取微信服务器的IP组");
-            JSONArray array = new JSONObject(httpClient.getReqStr(WxServerInfo.DOMAIN + "/cgi-bin/get_api_domain_ip?access_token=" + TokenManager.instance.getAccessToken())).getJSONArray("ip_list");
+            JSONArray array = new JSONObject(httpClient.getReqStr(SHA1.DOMAIN + "/cgi-bin/get_api_domain_ip?access_token=" + TokenManager.instance.getAccessToken())).getJSONArray("ip_list");
             for (int i = 0; i < array.length(); i++)
                 WX_IPS.add(array.getString(i));
             System.out.println("3.2获取微信服务器IP组成功，数量：" + WX_IPS.size());
@@ -172,7 +172,7 @@ public class Main
                                         HashMap<String, String> hm = new HashMap<>();
                                         hm.put("ToUserName", toUserName);
                                         hm.put("FromUserName", fromUserName);
-                                        String contentResp = new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm));
+                                        String contentResp = new HttpClient().postReqStr(config[1] + "?signature=" + state[2] + "&timestamp=" + state[3] + "&nonce=" + state[4] + "&openid=" + state[1], executeText(config[2], hm, false));
                                         if (!config[3].isEmpty())
                                         {
                                             Document document2 = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(contentResp)));
@@ -181,7 +181,7 @@ public class Main
                                             if (contentNode != null)
                                             {
                                                 hm.put("Content", contentNode.getTextContent());
-                                                contentNode.setTextContent(executeText(config[3], hm));
+                                                contentNode.setTextContent(executeText(config[3], hm, false));
                                             }
                                             StringWriter writer = new StringWriter();
                                             Transformer transformer = TransformerFactory.newInstance().newTransformer();
@@ -198,74 +198,128 @@ public class Main
                                     }
                                 }
                                 case "urlText" -> {
-                                    response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + config[2] + "]]></Content></xml>");
-                                    thread(() -> {
-                                        Matcher urlSend = Pattern.compile("(get|post),(.*)").matcher(config[3]);
-                                        if (urlSend.matches())
+                                    response.put("200 OK", "<xml><ToUserName><![CDATA[" + fromUserName + "]]></ToUserName><FromUserName><![CDATA[" + toUserName + "]]></FromUserName><CreateTime>" + System.currentTimeMillis() / 1000 + "</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[" + (((boolean) urlTextSendArrayWait[0]) ? ((!((boolean) urlTextSendArrayWait[1])) ? "有正在发送的消息，无法接受指令" : "正在继续发送") : config[2]) + "]]></Content></xml>");
+                                    if (!((boolean) urlTextSendArrayWait[0]) || ((boolean) urlTextSendArrayWait[1]))
+                                    {
+                                        if (!((boolean) urlTextSendArrayWait[1]) || ((int) urlTextSendArrayWait[2]) > 1)
                                         {
-                                            String requestFunc = urlSend.group(1);
-                                            String resp = "";
-                                            HashMap<String, String> hm = new HashMap<>();
-                                            hm.put("ToUserName", toUserName);
-                                            hm.put("FromUserName", fromUserName);
-                                            hm.put("CreateTime", CreateTime);
-                                            hm.put("MsgId", MsgId);
-                                            if (configC.isText())
-                                                hm.put("Content", ars.get());
-                                            else
-                                                hm.put("Content", "");
-                                            String reqParam = executeText(urlSend.group(2), hm);
-                                            if (requestFunc.equals("get"))
+                                            if (((boolean) urlTextSendArrayWait[1]))
                                             {
-                                                try
-                                                {
-                                                    resp = new HttpClient().getReqStr(config[1] + reqParam);
-                                                }
-                                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
-                                                {
-                                                    resp = e.getMessage();
-                                                }
+                                                urlTextSendArrayWait[2] = ((int) urlTextSendArrayWait[2]) - 1;
+                                                urlTextSendArrayWait[1] = false;
                                             }
-                                            else if (requestFunc.equals("post"))
-                                            {
-                                                try
+                                        }
+                                        if (!((boolean) urlTextSendArrayWait[0]))
+                                        {
+                                            thread(() -> {
+                                                Matcher urlSend = Pattern.compile("(get|post),(.*)").matcher(config[3]);
+                                                if (urlSend.matches())
                                                 {
-                                                    resp = new HttpClient().postReqStr(config[1], reqParam);
+                                                    String requestFunc = urlSend.group(1);
+                                                    String resp = "";
+                                                    HashMap<String, String> hm = new HashMap<>();
+                                                    hm.put("ToUserName", toUserName);
+                                                    hm.put("FromUserName", fromUserName);
+                                                    hm.put("CreateTime", CreateTime);
+                                                    hm.put("MsgId", MsgId);
+                                                    if (configC.isText())
+                                                        hm.put("Content", ars.get());
+                                                    else
+                                                        hm.put("Content", "");
 
-                                                }
-                                                catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
-                                                {
-                                                    resp = e.getMessage();
-                                                }
-                                            }
-                                            Matcher urlResp = Pattern.compile("(str|array),(.*)").matcher(config[4]);
-                                            if (urlResp.matches())
-                                            {
-                                                String[] splitKey = urlResp.group(2).split("\\.");
-                                                JSONObject json = new JSONObject(resp);
-                                                for (int i = 0; i < splitKey.length - 1; i++)
-                                                    json = new JSONObject(json.get(splitKey[i]).toString());
-                                                if (urlResp.group(1).equals("str"))
-                                                {
-                                                    String message = json.getString(splitKey[splitKey.length - 1]);
-                                                    sendMsg(fromUserName, message);
-                                                }
-                                                else if (urlResp.group(1).equals("array"))
-                                                {
-                                                    JSONArray ja = json.getJSONArray(splitKey[splitKey.length - 1]);
-                                                    for (int i = 0; i < ja.length(); i++)
+                                                    String reqParam = executeText(urlSend.group(2), hm, true);
+                                                    if (requestFunc.equals("get"))
                                                     {
-                                                        String message = ja.getString(i);
-                                                        sendMsg(fromUserName, message);
+                                                        try
+                                                        {
+                                                            resp = new HttpClient().getReqStr(config[1] + reqParam);
+                                                        }
+                                                        catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
+                                                        {
+                                                            resp = e.getMessage();
+                                                        }
                                                     }
-                                                }
-                                            }
+                                                    else if (requestFunc.equals("post"))
+                                                    {
+                                                        try
+                                                        {
+                                                            resp = new HttpClient().postReqStr(config[1], reqParam);
+
+                                                        }
+                                                        catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError | JSONException e)
+                                                        {
+                                                            resp = e.getMessage();
+                                                        }
+                                                    }
+                                                    Matcher urlResp = Pattern.compile("(str|array),(.*)").matcher(config[4]);
+                                                    if (urlResp.matches())
+                                                    {
+                                                        String[] splitKey = urlResp.group(2).split("\\.");
+                                                        JSONObject json = new JSONObject(resp);
+                                                        for (int i = 0; i < splitKey.length - 1; i++)
+                                                            json = new JSONObject(json.get(splitKey[i]).toString());
+                                                        if (urlResp.group(1).equals("str"))
+                                                        {
+                                                            String message = json.getString(splitKey[splitKey.length - 1]);
+                                                            sendMsg(fromUserName, message);
+                                                        }
+                                                        else if (urlResp.group(1).equals("array"))
+                                                        {
+                                                            JSONArray ja = json.getJSONArray(splitKey[splitKey.length - 1]);
+                                                            int dataArrayLen = ja.length();
+                                                            if (dataArrayLen > ONCE_MESSAGE_LIMIT)
+                                                            {
+                                                                int realSend = ONCE_MESSAGE_LIMIT - 1;
+                                                                int bigParagraphRemainder = dataArrayLen % realSend;
+                                                                int bigParagraph = dataArrayLen / realSend + (bigParagraphRemainder == 0 || bigParagraphRemainder == 1 ? 0 : 1);
+                                                                int alreadySend = 0;
+                                                                urlTextSendArrayWait[0] = true;
+                                                                urlTextSendArrayWait[2] = bigParagraph;
+                                                                for (int i = 0; i < bigParagraph; i++)
+                                                                {
+                                                                    int k = (i == bigParagraph - 1) ? (bigParagraphRemainder == 0 ? realSend : (bigParagraphRemainder == 1 ? ONCE_MESSAGE_LIMIT : bigParagraphRemainder)) : realSend;
+                                                                    for (int j = alreadySend; j < alreadySend + k; j++)
+                                                                        sendMsg(fromUserName, ja.getString(j));
+                                                                    alreadySend += k;
+                                                                    if (i != bigParagraph - 1)
+                                                                    {
+                                                                        sendMsg(fromUserName, "*:由于微信API限制，主动给用户发送消息超过" + ONCE_MESSAGE_LIMIT + "条会禁止发送，必须用户主动发消息才能继续补发剩余内容，请发送开头带你向AI发送指令的头部，后面加上任意文字，才能继续回复，限制30s，超过时间默认放弃继续回复");
+                                                                        urlTextSendArrayWait[1] = true;
+                                                                        int wait = 1;
+                                                                        do
+                                                                        {
+                                                                            try
+                                                                            {
+                                                                                Thread.sleep(1000);
+                                                                                wait++;
+                                                                            }
+                                                                            catch (InterruptedException ignored)
+                                                                            {}
+                                                                        }
+                                                                        while (((boolean) urlTextSendArrayWait[1]) && wait <= 30);
+                                                                        if (((boolean) urlTextSendArrayWait[1]))
+                                                                            break;
+                                                                    }
+                                                                }
+                                                                urlTextSendArrayWait[0] = false;
+                                                                urlTextSendArrayWait[1] = false;
+                                                                urlTextSendArrayWait[2] = 0;
+                                                            }
+                                                            else
+                                                            {
+                                                                for (int i = 0; i < dataArrayLen; i++)
+                                                                    sendMsg(fromUserName, ja.getString(i));
+                                                            }
+                                                        }
+                                                    }
 //                                            else
 //                                                throw new IOException();
-                                        }
+                                                }
 //                                        else
 //                                            throw new IOException();
-                                    });
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -327,7 +381,7 @@ public class Main
                             else
                                 sendJson = templateJson;
 
-                            response.put("200 OK", new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/template/send?access_token=" + TokenManager.instance.getAccessToken(), sendJson.toString()));
+                            response.put("200 OK", new HttpClient().postReqStr(SHA1.DOMAIN + "/cgi-bin/message/template/send?access_token=" + TokenManager.instance.getAccessToken(), sendJson.toString()));
                         }
                         catch (JSONException | HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError ignored)
                         {
@@ -347,25 +401,6 @@ public class Main
 
             return response;
         }, port);
-    }
-
-    private static void sendMsg(String fromUserName, String message)
-    {
-        try
-        {
-            System.out.println(new HttpClient().postReqStr(WxServerInfo.DOMAIN + "/cgi-bin/message/custom/send?access_token=" + TokenManager.instance.getAccessToken(), "{\"touser\":\"" + fromUserName + "\",\"msgtype\":\"text\",\"text\":{\"content\":\"" + message + "\"}}"));
-        }
-        catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError e)
-        {
-            PrintStream ps = System.out;
-            ps.print("主动发送消息异常：");
-            e.printStackTrace(ps);
-        }
-    }
-
-    public static void thread(Runnable runnable)
-    {
-        threadPool.execute(runnable);
     }
 
     private static String[] checkSign(HashMap<String, ArrayList<String>> request)
@@ -391,17 +426,31 @@ public class Main
             return new String[]{"2", ""};
     }
 
-    private static String executeText(String msg, HashMap<String, String> body)
+    private static void sendMsg(String fromUserName, String message)
+    {
+        try
+        {
+            System.out.println(new HttpClient().postReqStr(SHA1.DOMAIN + "/cgi-bin/message/custom/send?access_token=" + TokenManager.instance.getAccessToken(), "{\"touser\":\"" + fromUserName + "\",\"msgtype\":\"text\",\"text\":" + (new JSONObject().put("content", message).toString()) + "}"));
+        }
+        catch (HttpClient.HttpException.UnAuthorize | HttpClient.HttpException.Forbidden | HttpClient.HttpException.Unknown | HttpClient.HttpException.ServerError e)
+        {
+            PrintStream ps = System.out;
+            ps.print("主动发送消息异常：");
+            e.printStackTrace(ps);
+        }
+    }
+
+    private static String executeText(String msg, HashMap<String, String> body, boolean isEn)
     {
         return msg.replaceAll("%ToUserName%", body.get("ToUserName")).
                 replaceAll("%FromUserName%", body.get("FromUserName")).
                 replaceAll("%MsgId%", body.get("MsgId")).
                 replaceAll("%CreateTime%", body.containsKey("CreateTime") ? body.get("CreateTime") : String.valueOf(System.currentTimeMillis() / 1000)).
-                replaceAll("%Content%", body.getOrDefault("Content", ""));
+                replaceAll("%Content%", isEn ? Base64.getEncoder().encodeToString(body.getOrDefault("Content", "").getBytes()) : body.getOrDefault("Content", ""));
     }
 
-    public static final class WxServerInfo
+    public static void thread(Runnable runnable)
     {
-        public static final String DOMAIN = "https://api.weixin.qq.com";
+        threadPool.execute(runnable);
     }
 }
