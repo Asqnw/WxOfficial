@@ -105,12 +105,12 @@ public class TokenManager implements Runnable
                 HttpClient httpClient = new HttpClient();
                 httpClient.requestProperty.put("ThroughProxy", "1");//配合Fiddler
                 JSONObject json = new JSONObject(httpClient.getReqStr(SHA1.DOMAIN + "/cgi-bin/token?grant_type=client_credential&appid=" + Main.APPID + "&secret=" + Main.APP_SECRET));
-                System.out.println("更新ACCESS_TOKEN：" + json);
                 if (json.has("access_token") && json.has("expires_in"))
                 {
                     this.token = json.getString("access_token");
                     this.expires = json.getInt("expires_in");
                     this.update = this.currentTimeSecond();
+                    System.out.println("更新ACCESS_TOKEN成功");
                     return true;
                 }
             }

@@ -175,7 +175,7 @@ public final class HttpServer
                                 return;
                             }
                         }
-                        HashMap<String, String> result = callBack.run(this.request);
+                        HashMap<String, String> result = callBack.run(this.request, socket.getInetAddress().getHostAddress());
                         String key;
                         PrintWriter pw = new PrintWriter(socket.getOutputStream());
 
@@ -224,6 +224,15 @@ public final class HttpServer
         }};
     }
 
+    public static String findHeader(ArrayList<String> arrayList, String key)//a:b,c:d -> a : b
+    {
+        for (String s : arrayList)
+            if ((s + ":").toLowerCase().startsWith(key))
+                return s.substring(s.indexOf(':') + ":".length()).trim();
+
+        return "";
+    }
+
     public static String findParam(ArrayList<String> arrayList, String key)//a=b,c=d -> a = b
     {
         for (String s : arrayList)
@@ -235,6 +244,6 @@ public final class HttpServer
 
     public interface ServerCallBack
     {
-        HashMap<String, String> run(HashMap<String, ArrayList<String>> request);
+        HashMap<String, String> run(HashMap<String, ArrayList<String>> request, String clientIp);
     }
 }
